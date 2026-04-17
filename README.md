@@ -26,5 +26,5 @@
 4. **Запустите приложение**
     ```bash
     cd eda
-    streamlit run eda/app.py
+    streamlit run app.py
     ```
