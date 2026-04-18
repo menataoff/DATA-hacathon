@@ -1,0 +1,4 @@
+model,HitRate@10,CategoryHit@10,RetentionHit@10,RetentionCategoryHit@10,AvgQuality@10,AvgABC@10,n_users
+baseline_global,0.0,0.23,0.0,0.2303287142536211,0.89745998125,1.0,8000
+baseline_favorite_category,0.0,0.6955,0.0,0.6982502511103311,0.8972473874999999,1.0,8000
+v8_transition_retention,0.0,0.954375,0.0,0.9544595634321617,0.8972844524999998,0.99649,8000

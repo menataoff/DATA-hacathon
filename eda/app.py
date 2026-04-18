@@ -6,15 +6,14 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
 import os
-import lightgbm as lgb
+import json
 
 # ------------------ НАСТРОЙКА СТРАНИЦЫ ------------------
-st.set_page_config(page_title="Прогноз оттока клиентов", layout="wide", page_icon="📊")
-st.title("📊 Прогнозирование оттока клиентов")
-st.markdown("### Интерактивная платформа для оценки риска ухода клиентов и исследования ключевых факторов")
+st.set_page_config(page_title="Прогноз оттока + Рекомендации v8", layout="wide", page_icon="📊")
+st.title("📊 Прогнозирование оттока клиентов и рекомендации v8")
+st.markdown("### Интерактивная платформа для оценки риска ухода и персонализированных предложений")
 
-
-# ------------------ ЗАГРУЗКА МОДЕЛИ И ДАННЫХ ------------------
+# ------------------ ЗАГРУЗКА МОДЕЛИ И ДАННЫХ (ОТТОК) ------------------
 @st.cache_resource
 def load_model():
     if os.path.exists('best_churn_model.pkl'):
@@ -22,37 +21,60 @@ def load_model():
     elif os.path.exists('../best_churn_model.pkl'):
         return joblib.load('../best_churn_model.pkl')
     else:
-        st.error("Модель не найдена. Загрузите best_churn_model.pkl")
+        st.error("❌ Модель оттока не найдена. Загрузите best_churn_model.pkl")
         st.stop()
 
-
 @st.cache_data
-def load_data():
+def load_features():
     if os.path.exists('features_full.csv'):
         return pd.read_csv('features_full.csv')
     elif os.path.exists('../features_full.csv'):
         return pd.read_csv('../features_full.csv')
     else:
-        st.error("Файл features_full.csv не найден")
+        st.error("❌ Файл features_full.csv не найден")
         st.stop()
 
-
 model = load_model()
-df = load_data()
+df = load_features()
 feature_cols = model.feature_name_
 mean_vals = df[feature_cols].mean().to_dict()
 
+imp_df = None
 if os.path.exists('feature_importance_p3.csv'):
     imp_df = pd.read_csv('feature_importance_p3.csv')
-else:
-    imp_df = None
+elif os.path.exists('../feature_importance_p3.csv'):
+    imp_df = pd.read_csv('../feature_importance_p3.csv')
 
-# ------------------ БОКОВАЯ ПАНЕЛЬ НАВИГАЦИИ ------------------
+# ------------------ ЗАГРУЗКА ДАННЫХ РЕКОМЕНДАТЕЛЬНОЙ СИСТЕМЫ v8 ------------------
+@st.cache_data
+def load_v8_data():
+    data = {}
+    files = ['v8_recommendations.csv', 'metrics_comparison_v8.csv',
+             'segment_comparison_v8.csv', 'metric_selection_v8.csv', 'v8_summary.json']
+    for f in files:
+        if os.path.exists(f):
+            if f.endswith('.json'):
+                with open(f, 'r', encoding='utf-8') as jf:
+                    data[f.replace('.json', '')] = json.load(jf)
+            else:
+                data[f.replace('.csv', '')] = pd.read_csv(f)
+        elif os.path.exists(f'../{f}'):
+            if f.endswith('.json'):
+                with open(f'../{f}', 'r', encoding='utf-8') as jf:
+                    data[f.replace('.json', '')] = json.load(jf)
+            else:
+                data[f.replace('.csv', '')] = pd.read_csv(f'../{f}')
+    return data
+
+v8_data = load_v8_data()
+
+# ------------------ БОКОВАЯ ПАНЕЛЬ ------------------
 st.sidebar.title("Навигация")
 page = st.sidebar.radio(
     "Выберите раздел",
-    ["Главная", "Исследование данных", "Кластерный анализ", "Модель оттока", "Интерактивное предсказание",
-     "Гиперпараметры (демо)"]
+    ["Главная", "Исследование данных", "Кластерный анализ", "Модель оттока",
+     "Интерактивное предсказание", "Гиперпараметры (демо)",
+     "Рекомендации v8", "Ручной профиль (v8)"]
 )
 
 # ------------------ СТРАНИЦА "ГЛАВНАЯ" ------------------
@@ -79,10 +101,9 @@ if page == "Главная":
     - **Возраст** также влияет: в наших данных клиенты 40–50 лет более лояльны, чем молодые.
     - **Высокая доля возвратов** – сигнал недовольства. Клиенты с возвратами более 20% имеют повышенный риск.
     """)
-    st.info(
-        "💡 *Все выводы основаны на анализе реальных данных (синтетических, но с сохранением всех закономерностей).*")
+    st.info("💡 *Все выводы основаны на анализе реальных данных (синтетических, но с сохранением всех закономерностей).*")
 
-# ------------------ СТРАНИЦА "ИССЛЕДОВАНИЕ ДАННЫХ" ------------------
+# ------------------ ИССЛЕДОВАНИЕ ДАННЫХ ------------------
 elif page == "Исследование данных":
     st.header("🔍 Разведочный анализ данных")
     st.markdown("""
@@ -105,7 +126,7 @@ elif page == "Исследование данных":
     else:
         st.info("Файл с важностью признаков не загружен.")
 
-# ------------------ СТРАНИЦА "КЛАСТЕРНЫЙ АНАЛИЗ" ------------------
+# ------------------ КЛАСТЕРНЫЙ АНАЛИЗ ------------------
 elif page == "Кластерный анализ":
     st.header("👥 Кластерный анализ клиентской базы")
     st.markdown("""
@@ -113,13 +134,13 @@ elif page == "Кластерный анализ":
     Оптимальное число кластеров выбрано по методу локтя и силуэта (см. график).  
     Каждый кластер требует своей стратегии взаимодействия.
     """)
+    # Отображение графиков, если они есть
     if os.path.exists('cluster_analysis.png'):
-        st.image('cluster_analysis.png', caption="Метод локтя (инерция) и силуэт (качество кластеризации)",
-                 use_container_width=True)
+        st.image('cluster_analysis.png', caption="Метод локтя (инерция) и силуэт (качество кластеризации)", use_container_width=True)
     elif os.path.exists('../cluster_analysis.png'):
         st.image('../cluster_analysis.png', caption="Метод локтя и силуэт", use_container_width=True)
     else:
-        st.warning("Файл cluster_analysis.png не найден.")
+        st.warning("Файл cluster_analysis.png не найден. Вы можете сгенерировать его из ноутбука task2.")
 
     st.subheader("📋 Характеристики кластеров")
     st.markdown("""
@@ -130,10 +151,9 @@ elif page == "Кластерный анализ":
     | **2** | 14 278 | 817 | 0.64 | 218 | 0.20 | 422 | **Активные с возвратами** – много покупают, но часто возвращают | Улучшить качество, предлагать товары с низкими возвратами |
     | **3** | 14 048 | 350 | **1.13** | **265** | 0.02 | **316** | **Активные и прибыльные** – самые ценные клиенты | Программы лояльности, бонусы, удержание |
     """)
-    st.success(
-        "**Рекомендации:** Для кластера 1 (спящие) – запустить email‑кампанию с персональными скидками. Для кластера 2 – пересмотреть ассортимент и качество товаров.")
+    st.success("**Рекомендации:** Для кластера 1 (спящие) – запустить email‑кампанию с персональными скидками. Для кластера 2 – пересмотреть ассортимент и качество товаров.")
 
-# ------------------ СТРАНИЦА "МОДЕЛЬ ОТТОКА" ------------------
+# ------------------ МОДЕЛЬ ОТТОКА ------------------
 elif page == "Модель оттока":
     st.header("🧠 Модель прогнозирования оттока")
     st.markdown("""
@@ -162,8 +182,7 @@ elif page == "Модель оттока":
     st.subheader("📉 ROC-кривая")
     if os.path.exists('roc_curve.png'):
         st.image('roc_curve.png', use_container_width=True)
-        st.caption(
-            "ROC-кривая показывает, как часто модель правильно идентифицирует отточных клиентов. Площадь под кривой (AUC) = 0.772 – хороший результат.")
+        st.caption("ROC-кривая показывает, как часто модель правильно идентифицирует отточных клиентов. Площадь под кривой (AUC) = 0.772 – хороший результат.")
     elif os.path.exists('../roc_curve.png'):
         st.image('../roc_curve.png', use_container_width=True)
     else:
@@ -172,10 +191,9 @@ elif page == "Модель оттока":
     if os.path.exists('pr_curve.png'):
         st.subheader("📈 PR-кривая")
         st.image('pr_curve.png', use_container_width=True)
-        st.caption(
-            "PR-кривая более чувствительна к дисбалансу. Высокое значение PR-AUC = 0.992 подтверждает, что модель отлично ранжирует клиентов по риску.")
+        st.caption("PR-кривая более чувствительна к дисбалансу. Высокое значение PR-AUC = 0.992 подтверждает, что модель отлично ранжирует клиентов по риску.")
 
-# ------------------ СТРАНИЦА "ИНТЕРАКТИВНОЕ ПРЕДСКАЗАНИЕ" ------------------
+# ------------------ ИНТЕРАКТИВНОЕ ПРЕДСКАЗАНИЕ ------------------
 elif page == "Интерактивное предсказание":
     st.header("🎚️ Предскажите вероятность оттока")
     st.markdown("""
@@ -219,10 +237,9 @@ elif page == "Интерактивное предсказание":
         f"**Рекомендация:** {'🚨 Срочное удержание (персональная скидка, колл)' if proba > 0.7 else '⚡ Мониторинг, можно отправить email' if proba > 0.3 else '✅ Стабильный клиент, поддерживать лояльность'}")
 
     st.markdown("---")
-    st.markdown(
-        "💡 *Попробуйте установить `days_since_last_event = 600` и `recency = 800` – вероятность оттока станет очень высокой.*")
+    st.markdown("💡 *Попробуйте установить `days_since_last_event = 600` и `recency = 800` – вероятность оттока станет очень высокой.*")
 
-# ------------------ СТРАНИЦА "ГИПЕРПАРАМЕТРЫ (ДЕМО)" ------------------
+# ------------------ ГИПЕРПАРАМЕТРЫ (ДЕМО) ------------------
 elif page == "Гиперпараметры (демо)":
     st.header("⚙️ Влияние гиперпараметров на качество модели")
     st.markdown("""
@@ -235,13 +252,141 @@ elif page == "Гиперпараметры (демо)":
     learning_rate = st.slider("Скорость обучения (learning_rate)", 0.01, 0.2, 0.072, step=0.005)
 
     base_auc = 0.772
-    penalty = (abs(n_estimators - 295) / 500) * 0.05 + (abs(max_depth - 7) / 15) * 0.03 + (
-                abs(learning_rate - 0.072) / 0.2) * 0.04
+    penalty = (abs(n_estimators - 295) / 500) * 0.05 + (abs(max_depth - 7) / 15) * 0.03 + (abs(learning_rate - 0.072) / 0.2) * 0.04
     sim_auc = max(0.65, min(0.78, base_auc - penalty))
 
     st.metric("Симулированный ROC-AUC", f"{sim_auc:.4f}")
     st.progress((sim_auc - 0.65) / 0.15)
-    st.caption(
-        "**Лучшие параметры по результатам Optuna:** n_estimators=295, max_depth=7, learning_rate=0.072, subsample=0.918, colsample_bytree=0.833.")
-    st.info(
-        "При реальном обучении модель с такими параметрами дала ROC-AUC = 0.772. Дальнейшее увеличение сложности (больше деревьев, глубже) приводит к переобучению и снижению метрики на тесте.")
+    st.caption("**Лучшие параметры по результатам Optuna:** n_estimators=295, max_depth=7, learning_rate=0.072, subsample=0.918, colsample_bytree=0.833.")
+    st.info("При реальном обучении модель с такими параметрами дала ROC-AUC = 0.772. Дальнейшее увеличение сложности (больше деревьев, глубже) приводит к переобучению и снижению метрики на тесте.")
+
+# ------------------ РЕКОМЕНДАЦИИ v8 (ПРОСМОТР ТАБЛИЦЫ, СРАВНЕНИЕ МЕТОДОВ) ------------------
+elif page == "Рекомендации v8":
+    st.header("🎁 Рекомендательная система v8")
+    st.markdown("""
+    **Гибридная модель** – объяснимый алгоритм, который опирается на:
+    - силу товара (`item_score`),
+    - интерес пользователя к категориям и переходы между ними,
+    - риск ухода (`risk_score`),
+    - ценовое соответствие (`price_fit`),
+    - безопасный резерв (cold start / safe explore).
+
+    **Главные метрики выбора модели:**
+    - `CategoryHit@10` – доля пользователей, у которых следующая реальная категория покупки попала в top-10 рекомендаций.
+    - `RetentionCategoryHit@10` – то же, но с весом `1 + risk_score`, т.е. важнее попасть в интерес для рискованных клиентов.
+    """)
+
+    if 'v8_recommendations' not in v8_data:
+        st.warning("Файлы рекомендаций v8 не найдены. Пожалуйста, поместите в папку `v8_recommendations.csv`, `metrics_comparison_v8.csv` и др.")
+    else:
+        rec_df = v8_data['v8_recommendations']
+        user_ids = sorted(rec_df['user_id'].unique())
+        selected_user = st.selectbox("Выберите пользователя", user_ids)
+        user_recs = rec_df[rec_df['user_id'] == selected_user].sort_values('rank')
+        st.subheader(f"📌 Рекомендации для {selected_user}")
+        st.dataframe(user_recs[['rank', 'product_id', 'recommended_category', 'final_score', 'source_block']], use_container_width=True)
+
+        if 'metrics_comparison_v8' in v8_data:
+            st.subheader("📊 Сравнение методов")
+            metrics_df = v8_data['metrics_comparison_v8']
+            st.dataframe(metrics_df, use_container_width=True)
+
+            fig = go.Figure()
+            for metric in ['CategoryHit@10', 'RetentionCategoryHit@10', 'AvgQuality@10', 'AvgABC@10']:
+                if metric in metrics_df.columns:
+                    fig.add_trace(go.Bar(name=metric, x=metrics_df['model'], y=metrics_df[metric]))
+            fig.update_layout(title="Сравнение метрик", barmode='group', height=500)
+            st.plotly_chart(fig, use_container_width=True)
+
+        if 'segment_comparison_v8' in v8_data:
+            st.subheader("📈 Качество по риск-сегментам")
+            seg = v8_data['segment_comparison_v8']
+            fig = px.bar(seg, x='risk_segment', y='CategoryHit_10', color='model',
+                         title="CategoryHit@10 по сегментам риска", barmode='group')
+            st.plotly_chart(fig, use_container_width=True)
+
+        if 'metric_selection_v8' in v8_data:
+            st.subheader("🔍 Выбор главных метрик")
+            st.dataframe(v8_data['metric_selection_v8'], use_container_width=True)
+
+        # Блок с формулами (кратко)
+        with st.expander("📐 Основные формулы v8 (справочно)"):
+            st.markdown(r"""
+            **Сила товара:**  
+            $\text{item_score} = 0.45 \cdot \text{pop\_norm} + 0.20 \cdot \text{revenue\_norm} + 0.20 \cdot \text{abc\_score} + 0.15 \cdot \text{quality\_score}$
+
+            **Интерес пользователя к категории:**  
+            $\text{cat\_pref\_score}_{u,c} = \frac{0.45 \cdot \text{cnt} + 2.50 \cdot \text{spend\_share} + 0.35 \cdot \text{recency\_sum}}{\max_c(...)}$
+
+            **Переходы:**  
+            $\text{transition\_prob}_{a\to b} = \frac{N_{a\to b}}{\sum_{b'} N_{a\to b'}}$, берутся top-5.
+
+            **Итоговая сила категории:**  
+            $\text{cat\_score} = 0.45 \cdot \text{cat\_pref\_score} + (0.35 + 0.15(1-\text{risk\_score})) \cdot \text{transition\_score}$
+
+            **Балл товара в историко-переходном блоке:**  
+            $\text{score}^{(hist)} = 0.42 \cdot \text{cat\_score} + (0.22+0.08\cdot\text{risk})\cdot\text{pop\_norm} + 0.12\cdot\text{revenue\_norm} + (0.12+0.08\cdot\text{risk})\cdot\text{quality} + 0.08\cdot\text{price\_fit} + 0.06\cdot\text{abc}$
+
+            **Безопасный блок (explore):**  
+            $\text{score}^{(explore)} = 0.30\cdot\text{pop\_norm} + 0.20\cdot\text{revenue\_norm} + 0.20\cdot\text{quality} + 0.12\cdot\text{price\_fit} + 0.08\cdot\text{abc} + 0.10\cdot\text{risk}$
+            """)
+
+# ------------------ РУЧНОЙ ПРОФИЛЬ (v8) ------------------
+elif page == "Ручной профиль (v8)":
+    st.header("🎛️ Ручной режим: задайте профиль клиента")
+    st.markdown("""
+    Укажите до трёх категорий интереса, вероятность ухода и уже купленные товары.  
+    Система подберёт рекомендации на основе логики **v8_transition_retention**.
+    """)
+
+    if 'v8_recommendations' not in v8_data:
+        st.warning("Файл v8_recommendations.csv не найден. Ручной режим недоступен.")
+    else:
+        rec_full = v8_data['v8_recommendations']
+        all_categories = sorted(rec_full['recommended_category'].dropna().unique())
+
+        col1, col2 = st.columns(2)
+        with col1:
+            cat1 = st.selectbox("Категория 1 (приоритет)", options=["—"] + all_categories, index=0)
+            cat2 = st.selectbox("Категория 2", options=["—"] + all_categories, index=0)
+            cat3 = st.selectbox("Категория 3", options=["—"] + all_categories, index=0)
+        with col2:
+            churn_prob = st.slider("Вероятность ухода (churn_probability)", 0.0, 1.0, 0.5, 0.01)
+            purchased_raw = st.text_input("Уже купленные product_id (через запятую)", placeholder="123, 456, 789")
+            purchased_ids = [int(x.strip()) for x in purchased_raw.split(",") if x.strip().isdigit()]
+
+        if st.button("Получить рекомендации", type="primary"):
+            # Определяем риск-сегмент
+            if churn_prob <= 0.67:
+                risk_seg = "low_risk"
+            elif churn_prob <= 0.90:
+                risk_seg = "medium_risk"
+            else:
+                risk_seg = "high_risk"
+
+            # Собираем выбранные категории
+            cats = [c for c in [cat1, cat2, cat3] if c != "—"]
+            # Создаём упрощённый риск-сегмент в DataFrame
+            df_temp = rec_full.copy()
+            df_temp['risk_segment_sim'] = pd.cut(df_temp['churn_probability'], bins=[-1, 0.67, 0.90, 2],
+                                                 labels=['low_risk', 'medium_risk', 'high_risk'])
+            if cats:
+                mask = df_temp['recommended_category'].isin(cats) & (df_temp['risk_segment_sim'] == risk_seg)
+                candidates = df_temp[mask].sort_values(['rank', 'final_score'], ascending=[True, False])
+            else:
+                candidates = df_temp.sort_values(['rank', 'final_score'], ascending=[True, False])
+            # Исключаем уже купленные
+            candidates = candidates[~candidates['product_id'].isin(purchased_ids)]
+            top = candidates.drop_duplicates('product_id').head(10).copy()
+            top['rank'] = range(1, len(top)+1)
+
+            st.subheader("📌 Рекомендации")
+            st.dataframe(top[['rank', 'product_id', 'recommended_category', 'final_score', 'quality_score', 'abc_score', 'source_block']], use_container_width=True)
+
+            # Визуализация баллов
+            fig = px.bar(top, x='rank', y='final_score', hover_data=['product_id', 'recommended_category'],
+                         title=f"Итоговый балл рекомендаций (риск-сегмент: {risk_seg})")
+            st.plotly_chart(fig, use_container_width=True)
+
+# ------------------ ПОДВАЛ ------------------
+st.caption("© Комплексное решение – прогноз оттока + рекомендации v8. Модель оттока обучена без утечки данных.")
